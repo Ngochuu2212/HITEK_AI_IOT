@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+pyyaml
+opencv-python-headless
+numpy
+psycopg[binary]
+minio
+python-multipart

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>HITEK AI Vision</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap">
+    <link rel="stylesheet" href="/static/styles.css?v=console-2">
+  </head>
+  <body>
+    <a class="skip-link" href="#view">Bỏ qua thanh điều hướng</a>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span class="brand-text"><strong>HITEK</strong> AI Vision</span>
+        </div>
+        <nav class="nav" aria-label="Màn hình">
+          <a href="#/monitor" data-route="monitor">Giám sát</a>
+          <a href="#/zones" data-route="zones">Vùng và luật</a>
+          <a href="#/events" data-route="events">Sự kiện và bằng chứng</a>
+          <a href="#/system" data-route="system">Hệ thống</a>
+        </nav>
+        <section class="side-cameras" aria-label="Camera">
+          <h2>Camera</h2>
+          <ul data-camera-status></ul>
+        </section>
+      </aside>
+      <div class="main">
+        <header class="topbar">
+          <div class="runtime" data-runtime title="Nơi AI Service đang chạy">AI: đang chờ kết quả</div>
+          <div class="topbar-right" data-user></div>
+        </header>
+        <main id="view" class="view" tabindex="-1"></main>
+      </div>
+    </div>
+    <div class="toasts" data-toasts role="status" aria-live="polite"></div>
+    <script type="module" src="/static/app.js?v=console-2"></script>
+  </body>
+</html>

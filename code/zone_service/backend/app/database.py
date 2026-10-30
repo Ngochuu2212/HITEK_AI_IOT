@@ -1,0 +1,427 @@
+import sqlite3
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Any, Iterable, Iterator, Optional
+
+
+SCHEMA = """
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE IF NOT EXISTS tenant (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    code TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS location (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL REFERENCES tenant(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    code TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (tenant_id, code)
+);
+
+CREATE TABLE IF NOT EXISTS camera (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL REFERENCES tenant(id) ON DELETE CASCADE,
+    location_id TEXT NOT NULL REFERENCES location(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    source_url TEXT NOT NULL,
+    status TEXT NOT NULL,
+    last_seen_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (tenant_id, source_url),
+    UNIQUE (location_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS camera_reference_frame (
+    id TEXT PRIMARY KEY,
+    camera_id TEXT NOT NULL REFERENCES camera(id) ON DELETE CASCADE,
+    storage_key TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    frame_width INTEGER NOT NULL,
+    frame_height INTEGER NOT NULL,
+    captured_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS zone (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL REFERENCES tenant(id) ON DELETE CASCADE,
+    camera_id TEXT NOT NULL REFERENCES camera(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    zone_type TEXT NOT NULL,
+    polygon TEXT NOT NULL,
+    frame_width INTEGER NOT NULL,
+    frame_height INTEGER NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS rule_config (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL REFERENCES tenant(id) ON DELETE CASCADE,
+    zone_id TEXT NOT NULL REFERENCES zone(id) ON DELETE CASCADE,
+    rule_type TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    object_type TEXT,
+    duration_threshold INTEGER,
+    people_threshold INTEGER,
+    confidence_threshold REAL,
+    use_active_time INTEGER NOT NULL DEFAULT 0,
+    active_start_time TEXT,
+    active_end_time TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (zone_id, rule_type)
+);
+
+CREATE TABLE IF NOT EXISTS ai_event (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL REFERENCES tenant(id) ON DELETE CASCADE,
+    alert_id TEXT REFERENCES alert(id) ON DELETE SET NULL,
+    source_event_id TEXT NOT NULL UNIQUE,
+    camera_id TEXT NOT NULL REFERENCES camera(id) ON DELETE CASCADE,
+    zone_id TEXT REFERENCES zone(id) ON DELETE SET NULL,
+    rule_config_id TEXT REFERENCES rule_config(id) ON DELETE SET NULL,
+    event_type TEXT NOT NULL,
+    object_type TEXT,
+    track_id TEXT,
+    confidence REAL,
+    lifecycle_status TEXT NOT NULL DEFAULT 'active',
+    first_sequence_number INTEGER,
+    last_sequence_number INTEGER,
+    started_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    ended_at TEXT,
+    payload TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS alert (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL REFERENCES tenant(id) ON DELETE CASCADE,
+    dedup_key TEXT NOT NULL,
+    camera_id TEXT NOT NULL REFERENCES camera(id) ON DELETE CASCADE,
+    zone_id TEXT REFERENCES zone(id) ON DELETE SET NULL,
+    rule_config_id TEXT REFERENCES rule_config(id) ON DELETE SET NULL,
+    rule_type TEXT NOT NULL,
+    object_type TEXT,
+    risk_level TEXT NOT NULL DEFAULT 'medium',
+    lifecycle_status TEXT NOT NULL DEFAULT 'active',
+    active_source_count INTEGER NOT NULL DEFAULT 1,
+    first_sequence_number INTEGER,
+    last_sequence_number INTEGER,
+    started_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    ended_at TEXT,
+    payload TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS evidence (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL REFERENCES tenant(id) ON DELETE CASCADE,
+    alert_id TEXT REFERENCES alert(id) ON DELETE CASCADE,
+    ai_event_id TEXT NOT NULL REFERENCES ai_event(id) ON DELETE CASCADE,
+    camera_id TEXT NOT NULL REFERENCES camera(id) ON DELETE CASCADE,
+    evidence_type TEXT NOT NULL,
+    storage_key TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    file_size INTEGER,
+    frame_id TEXT,
+    sequence_number INTEGER,
+    captured_at TEXT NOT NULL,
+    started_at TEXT,
+    ended_at TEXT,
+    duration_seconds REAL,
+    codec TEXT,
+    fps REAL,
+    frame_width INTEGER,
+    frame_height INTEGER,
+    status TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_location_tenant_id ON location(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_camera_location_id ON camera(location_id);
+CREATE INDEX IF NOT EXISTS idx_zone_camera_id ON zone(camera_id);
+CREATE INDEX IF NOT EXISTS idx_reference_frame_camera_id ON camera_reference_frame(camera_id);
+CREATE INDEX IF NOT EXISTS idx_ai_event_camera_id ON ai_event(camera_id);
+CREATE INDEX IF NOT EXISTS idx_ai_event_zone_id ON ai_event(zone_id);
+CREATE INDEX IF NOT EXISTS idx_ai_event_started_at ON ai_event(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_alert_tenant_id ON alert(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_alert_dedup_key ON alert(dedup_key);
+CREATE INDEX IF NOT EXISTS idx_alert_camera_id ON alert(camera_id);
+CREATE INDEX IF NOT EXISTS idx_alert_last_seen_at ON alert(last_seen_at DESC);
+CREATE INDEX IF NOT EXISTS idx_evidence_ai_event_id ON evidence(ai_event_id);
+CREATE INDEX IF NOT EXISTS idx_evidence_camera_id ON evidence(camera_id);
+CREATE INDEX IF NOT EXISTS idx_evidence_captured_at ON evidence(captured_at DESC);
+"""
+
+
+class Database:
+    def __init__(self, path: Path, url: Optional[str] = None) -> None:
+        self.path = Path(path)
+        self.url = url
+        self.backend = "postgres" if url else "sqlite"
+
+    def initialize(self) -> None:
+        if self.backend == "postgres":
+            with self.connect() as connection:
+                for path in sorted(_postgres_init_dir().glob("*.sql")):
+                    with path.open("r", encoding="utf-8") as handle:
+                        connection.execute(handle.read())
+            return
+
+        with self.connect() as connection:
+            connection.executescript(SCHEMA)
+            self._migrate_sqlite(connection)
+
+    def connect(self):
+        if self.backend == "postgres":
+            try:
+                import psycopg
+                from psycopg.rows import dict_row
+            except ImportError as exc:
+                raise RuntimeError("psycopg is required when DATABASE_URL is configured") from exc
+            return psycopg.connect(self.url, row_factory=dict_row)
+
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        connection = sqlite3.connect(str(self.path))
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        return connection
+
+    @contextmanager
+    def session(self) -> Iterator[Any]:
+        connection = self.connect()
+        try:
+            yield connection
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def execute(self, connection, sql: str, params: Iterable[Any] = ()):
+        return connection.execute(self.sql(sql), tuple(params))
+
+    def fetchone(self, connection, sql: str, params: Iterable[Any] = ()):
+        cursor = self.execute(connection, sql, params)
+        return cursor.fetchone()
+
+    def fetchall(self, connection, sql: str, params: Iterable[Any] = ()):
+        cursor = self.execute(connection, sql, params)
+        return list(cursor.fetchall())
+
+    def sql(self, sql: str) -> str:
+        if self.backend == "postgres":
+            return sql.replace("?", "%s")
+        return sql
+
+    def _migrate_sqlite(self, connection: sqlite3.Connection) -> None:
+        self._add_sqlite_column_if_missing(connection, "camera", "tenant_id", "TEXT")
+        self._add_sqlite_column_if_missing(connection, "zone", "tenant_id", "TEXT")
+        self._add_sqlite_column_if_missing(connection, "rule_config", "tenant_id", "TEXT")
+        self._add_sqlite_column_if_missing(connection, "rule_config", "object_type", "TEXT")
+        self._add_sqlite_column_if_missing(connection, "rule_config", "use_active_time", "INTEGER NOT NULL DEFAULT 0")
+        self._add_sqlite_column_if_missing(connection, "rule_config", "active_start_time", "TEXT")
+        self._add_sqlite_column_if_missing(connection, "rule_config", "active_end_time", "TEXT")
+        self._ensure_sqlite_access_tables(connection)
+        self._ensure_sqlite_ai_event_table(connection)
+        self._ensure_sqlite_alert_table(connection)
+        self._ensure_sqlite_evidence_table(connection)
+        self._add_sqlite_column_if_missing(connection, "ai_event", "alert_id", "TEXT")
+        self._add_sqlite_column_if_missing(connection, "evidence", "alert_id", "TEXT")
+        self._add_sqlite_column_if_missing(connection, "evidence", "started_at", "TEXT")
+        self._add_sqlite_column_if_missing(connection, "evidence", "ended_at", "TEXT")
+        self._add_sqlite_column_if_missing(connection, "evidence", "duration_seconds", "REAL")
+        self._add_sqlite_column_if_missing(connection, "evidence", "codec", "TEXT")
+        self._add_sqlite_column_if_missing(connection, "evidence", "fps", "REAL")
+        self._add_sqlite_column_if_missing(connection, "evidence", "frame_width", "INTEGER")
+        self._add_sqlite_column_if_missing(connection, "evidence", "frame_height", "INTEGER")
+        self._add_sqlite_column_if_missing(connection, "evidence", "status", "TEXT")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_ai_event_alert_id ON ai_event(alert_id)")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_evidence_alert_id ON evidence(alert_id)")
+        connection.execute(
+            """
+            UPDATE camera
+            SET tenant_id = (
+                SELECT tenant_id FROM location WHERE location.id = camera.location_id
+            )
+            WHERE tenant_id IS NULL
+            """
+        )
+        connection.execute(
+            """
+            UPDATE zone
+            SET tenant_id = (
+                SELECT tenant_id
+                FROM camera
+                WHERE camera.id = zone.camera_id
+            )
+            WHERE tenant_id IS NULL
+            """
+        )
+        connection.execute(
+            """
+            UPDATE rule_config
+            SET tenant_id = (
+                SELECT tenant_id
+                FROM zone
+                WHERE zone.id = rule_config.zone_id
+            )
+            WHERE tenant_id IS NULL
+            """
+        )
+
+    def _add_sqlite_column_if_missing(self, connection: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+        cursor = connection.execute("PRAGMA table_info({})".format(table))
+        columns = {row["name"] for row in cursor.fetchall()}
+        if column not in columns:
+            connection.execute("ALTER TABLE {} ADD COLUMN {} {}".format(table, column, definition))
+
+    def _ensure_sqlite_access_tables(self, connection: sqlite3.Connection) -> None:
+        """Bang nguoi dung / phan quyen (giong Postgres) de dev va test bang SQLite."""
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS app_user (
+                id TEXT PRIMARY KEY,
+                email TEXT NOT NULL UNIQUE,
+                full_name TEXT NOT NULL,
+                password_hash TEXT,
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS tenant_member (
+                id TEXT PRIMARY KEY,
+                tenant_id TEXT NOT NULL REFERENCES tenant(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+                role TEXT NOT NULL DEFAULT 'viewer',
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (tenant_id, user_id)
+            );
+            CREATE TABLE IF NOT EXISTS user_location_access (
+                id TEXT PRIMARY KEY,
+                tenant_id TEXT NOT NULL REFERENCES tenant(id) ON DELETE CASCADE,
+                tenant_member_id TEXT NOT NULL REFERENCES tenant_member(id) ON DELETE CASCADE,
+                location_id TEXT NOT NULL REFERENCES location(id) ON DELETE CASCADE,
+                permission_level TEXT NOT NULL DEFAULT 'viewer',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (tenant_member_id, location_id)
+            );
+            """
+        )
+
+    def _ensure_sqlite_ai_event_table(self, connection: sqlite3.Connection) -> None:
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS ai_event (
+                id TEXT PRIMARY KEY,
+                tenant_id TEXT NOT NULL REFERENCES tenant(id) ON DELETE CASCADE,
+                alert_id TEXT REFERENCES alert(id) ON DELETE SET NULL,
+                source_event_id TEXT NOT NULL UNIQUE,
+                camera_id TEXT NOT NULL REFERENCES camera(id) ON DELETE CASCADE,
+                zone_id TEXT REFERENCES zone(id) ON DELETE SET NULL,
+                rule_config_id TEXT REFERENCES rule_config(id) ON DELETE SET NULL,
+                event_type TEXT NOT NULL,
+                object_type TEXT,
+                track_id TEXT,
+                confidence REAL,
+                lifecycle_status TEXT NOT NULL DEFAULT 'active',
+                first_sequence_number INTEGER,
+                last_sequence_number INTEGER,
+                started_at TEXT NOT NULL,
+                last_seen_at TEXT NOT NULL,
+                ended_at TEXT,
+                payload TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_ai_event_camera_id ON ai_event(camera_id);
+            CREATE INDEX IF NOT EXISTS idx_ai_event_zone_id ON ai_event(zone_id);
+            CREATE INDEX IF NOT EXISTS idx_ai_event_started_at ON ai_event(started_at DESC);
+            """
+        )
+
+    def _ensure_sqlite_alert_table(self, connection: sqlite3.Connection) -> None:
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS alert (
+                id TEXT PRIMARY KEY,
+                tenant_id TEXT NOT NULL REFERENCES tenant(id) ON DELETE CASCADE,
+                dedup_key TEXT NOT NULL,
+                camera_id TEXT NOT NULL REFERENCES camera(id) ON DELETE CASCADE,
+                zone_id TEXT REFERENCES zone(id) ON DELETE SET NULL,
+                rule_config_id TEXT REFERENCES rule_config(id) ON DELETE SET NULL,
+                rule_type TEXT NOT NULL,
+                object_type TEXT,
+                risk_level TEXT NOT NULL DEFAULT 'medium',
+                lifecycle_status TEXT NOT NULL DEFAULT 'active',
+                active_source_count INTEGER NOT NULL DEFAULT 1,
+                first_sequence_number INTEGER,
+                last_sequence_number INTEGER,
+                started_at TEXT NOT NULL,
+                last_seen_at TEXT NOT NULL,
+                ended_at TEXT,
+                payload TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_alert_tenant_id ON alert(tenant_id);
+            CREATE INDEX IF NOT EXISTS idx_alert_dedup_key ON alert(dedup_key);
+            CREATE INDEX IF NOT EXISTS idx_alert_camera_id ON alert(camera_id);
+            CREATE INDEX IF NOT EXISTS idx_alert_last_seen_at ON alert(last_seen_at DESC);
+            """
+        )
+
+    def _ensure_sqlite_evidence_table(self, connection: sqlite3.Connection) -> None:
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS evidence (
+                id TEXT PRIMARY KEY,
+                tenant_id TEXT NOT NULL REFERENCES tenant(id) ON DELETE CASCADE,
+                alert_id TEXT REFERENCES alert(id) ON DELETE CASCADE,
+                ai_event_id TEXT NOT NULL REFERENCES ai_event(id) ON DELETE CASCADE,
+                camera_id TEXT NOT NULL REFERENCES camera(id) ON DELETE CASCADE,
+                evidence_type TEXT NOT NULL,
+                storage_key TEXT NOT NULL,
+                mime_type TEXT NOT NULL,
+                file_size INTEGER,
+                frame_id TEXT,
+                sequence_number INTEGER,
+                captured_at TEXT NOT NULL,
+                started_at TEXT,
+                ended_at TEXT,
+                duration_seconds REAL,
+                codec TEXT,
+                fps REAL,
+                frame_width INTEGER,
+                frame_height INTEGER,
+                status TEXT,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_evidence_ai_event_id ON evidence(ai_event_id);
+            CREATE INDEX IF NOT EXISTS idx_evidence_camera_id ON evidence(camera_id);
+            CREATE INDEX IF NOT EXISTS idx_evidence_captured_at ON evidence(captured_at DESC);
+            """
+        )
+
+
+def _postgres_init_dir() -> Path:
+    return Path(__file__).resolve().parents[3] / "database" / "postgres" / "init"

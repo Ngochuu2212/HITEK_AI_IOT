@@ -1,0 +1,68 @@
+reports/
+
+# Python runtime artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments and local env
+.venv*/
+.venv/
+venv*/
+venv/
+env*/
+env/
+.env
+.env.*
+
+# IDE and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Jupyter runtime artifacts
+.ipynb_checkpoints/
+*.ipynb_checkpoints/
+
+# Office temporary files
+~$*
+*.tmp
+
+# ML model weights / generated binaries
+*.pt
+*.onnx
+*.engine
+*.weights
+*.tflite
+
+# Local runtime output
+runs/
+logs/
+*.log
+output/
+outputs/
+tmp/
+temp/
+code/zone_service/data/*.db
+code/zone_service/data/*.db-*
+code/zone_service/data/reference_frames/
+
+
+# Media files generated during experiments
+code/data/videos/*
+*.avi
+*.mp4
+*.dav
+*.mkv
+*.mov
+*.webm
+!.env.example
+
+# .NET build output (code/backend)
+**/bin/
+**/obj/
+.vs/

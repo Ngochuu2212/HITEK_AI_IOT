@@ -1,0 +1,64 @@
+from pathlib import Path
+
+from fastapi import FastAPI
+from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+
+from .access_control import AccessControl, AccessDenied
+from .auth import access_denied_handler, create_auth_router
+from .config import load_settings, project_root
+from .database import Database
+from .repositories.camera_repository import CameraRepository
+from .routers.ai_events import create_ai_event_router
+from .routers.cameras import create_camera_router, create_reference_frame_router
+from .routers.zones import create_zone_router
+from .services.camera_catalog_service import CameraCatalogService
+
+
+def create_app() -> FastAPI:
+    settings = load_settings()
+    database = Database(settings.database_path, settings.database_url)
+    database.initialize()
+    settings.reference_frame_dir.mkdir(parents=True, exist_ok=True)
+    settings.evidence_dir.mkdir(parents=True, exist_ok=True)
+
+    with database.session() as connection:
+        cameras = CameraCatalogService(settings.camera_config_path).load_cameras()
+        CameraRepository(connection, database).seed_from_config(settings.tenant_id, cameras)
+
+    access = AccessControl(database, settings)
+    app = FastAPI(title="Hitek Zone Management Service")
+    app.add_exception_handler(AccessDenied, access_denied_handler)
+    app.include_router(create_auth_router(access))
+    app.include_router(create_camera_router(database, settings, access))
+    app.include_router(create_reference_frame_router(database, settings, access))
+    app.include_router(create_zone_router(database, access))
+    app.include_router(create_ai_event_router(database, settings, access=access))
+
+    frontend_dir = project_root() / "code" / "zone_service" / "frontend"
+    app.mount("/static", StaticFiles(directory=str(frontend_dir / "src")), name="static")
+
+    @app.get("/health")
+    def health():
+        return {
+            "status": "ok",
+            "service": "zone-management-service",
+            "database_backend": database.backend,
+            "database": "postgres" if database.backend == "postgres" else str(settings.database_path),
+            "edge_gateway_base_url": settings.edge_gateway_base_url,
+            "auth_mode": settings.auth_mode,
+            "alert_mode": settings.alert_mode,
+        }
+
+    @app.get("/")
+    def index():
+        return FileResponse(str(frontend_dir / "index.html"))
+
+    @app.get("/detect")
+    def detect_view():
+        return RedirectResponse(url="/")
+
+    return app
+
+
+app = create_app()

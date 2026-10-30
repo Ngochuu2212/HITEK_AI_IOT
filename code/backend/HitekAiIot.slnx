@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Hitek.BackendApi/Hitek.BackendApi.csproj" />
+    <Project Path="src/Hitek.IotService/Hitek.IotService.csproj" />
+    <Project Path="src/Hitek.SensorSimulator/Hitek.SensorSimulator.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Hitek.BackendApi.Tests/Hitek.BackendApi.Tests.csproj" />
+    <Project Path="tests/Hitek.IotService.Tests/Hitek.IotService.Tests.csproj" />
+  </Folder>
+</Solution>
