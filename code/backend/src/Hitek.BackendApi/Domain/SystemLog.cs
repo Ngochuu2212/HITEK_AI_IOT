@@ -12,7 +12,8 @@ public enum SystemLogCategory
     Sensor,
     Alert,
     RiskRule,
-    User
+    User,
+    Camera
 }
 
 // Nhật ký hệ thống (đối tượng SystemLog, đề án mục 5.1): cảm biến mất/có lại kết nối, cảnh

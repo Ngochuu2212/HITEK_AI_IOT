@@ -40,6 +40,7 @@ builder.Services.AddDbContext<HitekDbContext>(options =>
 builder.Services.Configure<RiskEngineOptions>(builder.Configuration.GetSection("RiskEngine"));
 builder.Services.AddScoped<RiskEngineService>();
 builder.Services.Configure<AiServiceOptions>(builder.Configuration.GetSection("AiService"));
+builder.Services.Configure<CameraOptions>(builder.Configuration.GetSection("Cameras"));
 
 // Tiêm đồng hồ thay vì gọi thẳng DateTime.UtcNow, để kiểm thử được các luật phụ
 // thuộc thời gian như quy tắc ngoài khung giờ hay thời gian chờ trước khi đóng.

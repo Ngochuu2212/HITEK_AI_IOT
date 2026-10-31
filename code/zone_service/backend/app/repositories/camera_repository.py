@@ -45,6 +45,8 @@ class CameraRepository:
         )
 
     def upsert_camera(self, camera: Dict[str, str]) -> None:
+        # Camera da co thi giu nguyen trang thai: camera bi ngung tren Web Dashboard khong
+        # duoc tu bat lai moi lan Zone Service khoi dong va nap lai file cau hinh.
         now = utc_iso()
         conflict_target = "(tenant_id, source_url)" if self.database.backend == "postgres" else "(id)"
         self.database.execute(
@@ -57,7 +59,6 @@ class CameraRepository:
                 name = excluded.name,
                 source_type = excluded.source_type,
                 source_url = excluded.source_url,
-                status = excluded.status,
                 updated_at = excluded.updated_at
             """.format(conflict_target),
             (

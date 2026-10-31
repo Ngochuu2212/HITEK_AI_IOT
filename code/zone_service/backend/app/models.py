@@ -19,6 +19,7 @@ class CameraOut(BaseModel):
     source_type: str
     source_url: str
     status: str
+    ai_image_size: int = 640
     live_stream_url: str
     latest_frame_url: str
     detection_stream_url: str

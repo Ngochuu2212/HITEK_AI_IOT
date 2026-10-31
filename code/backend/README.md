@@ -109,6 +109,11 @@ Khoá ký JWT của môi trường thật đặt qua biến môi trường `Jwt_
 | GET | /api/v1/sensors/{id} | viewer | Chi tiết cảm biến |
 | GET | /api/v1/sensors/{id}/readings | viewer | Lịch sử đọc thô, lọc `from`, `to` |
 | POST, PUT, DELETE | /api/v1/sensors[/{id}] | admin | Thêm, sửa tên/khu vực, gỡ cảm biến |
+| GET | /api/v1/cameras[/{id}] | admin | Camera kèm nguồn (`sourceUrl` có thể chứa mật khẩu camera nên chỉ admin xem) |
+| GET | /api/v1/cameras/video-files | admin | Video mô phỏng chọn được (thư mục `Cameras:VideoDirectory`), kèm camera đang dùng |
+| POST | /api/v1/cameras/video-files | admin | Tải video lên (multipart, trường `file`, tối đa 300 MB): kiểm tra đuôi và chữ ký file, bỏ dấu tên, không ghi đè |
+| POST, PUT | /api/v1/cameras[/{id}] | admin | Thêm, sửa camera: tên, khu vực, nguồn `RTSP` (rtsp/rtsps/http/https) hoặc `FILE` (tên video), `aiImageSize` 640/960/1280 (độ chi tiết YOLO). Edge Gateway tự áp dụng trong vài giây |
+| PATCH | /api/v1/cameras/{id}/status | admin | `{ "enabled": false }` ngưng camera (giữ lịch sử), `true` bật lại |
 | GET | /api/v1/risk-rules | viewer | Bảng luật cảnh báo của tenant |
 | POST, PUT, DELETE | /api/v1/risk-rules[/{id}] | admin | Thêm, sửa, xoá luật |
 | GET | /api/v1/system-logs | operator | Nhật ký hệ thống, lọc `category`, `level`, `entityId`, `from`, `to` |

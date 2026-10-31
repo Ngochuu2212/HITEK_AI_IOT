@@ -10,7 +10,7 @@ from common.models import FrameMetadata
 from common.time_utils import utc_now
 
 from .config import CameraIngestConfig, VideoIngestConfig
-from .video_source import RtspVideoSource
+from .video_source import create_video_source
 
 
 LOGGER = logging.getLogger(__name__)
@@ -37,7 +37,7 @@ class VideoIngestWorker:
         self.stop_event = stop_event or threading.Event()
         self.sequence_number = 0
         self.enqueued_frames = 0
-        self._source = source or RtspVideoSource(camera.source_url)
+        self._source = source or create_video_source(camera.source_type, camera.source_url)
         self._reader_stop_event = threading.Event()
         self._frame_condition = threading.Condition()
         self._latest_frame = None
@@ -45,11 +45,13 @@ class VideoIngestWorker:
         self._latest_decoded_sequence = 0
 
     def stop(self) -> None:
+        # Khong release nguon video o day: stop() chay o luong khac, con luong doc co the dang
+        # nam trong VideoCapture.read(); giai phong giua chung lam OpenCV sap ca tien trinh.
+        # Luong doc tu release khi thoat vong lap.
         self._reader_stop_event.set()
         self.stop_event.set()
         with self._frame_condition:
             self._frame_condition.notify_all()
-        self._source.release()
 
     def run(self, max_frames: Optional[int] = None) -> None:
         emitted = 0
@@ -105,11 +107,17 @@ class VideoIngestWorker:
             self._reader_stop_event.set()
             with self._frame_condition:
                 self._frame_condition.notify_all()
-            self._source.release()
-            reader_thread.join(timeout=2.0)
+            reader_thread.join(timeout=5.0)
 
     def _read_loop(self) -> None:
         """Đọc RTSP liên tục và chỉ giữ frame decode mới nhất trong RAM."""
+        try:
+            self._read_frames()
+        finally:
+            # Chi luong doc duoc dong nguon video (xem stop()).
+            self._source.release()
+
+    def _read_frames(self) -> None:
         self._open_source_with_retry()
         while not self._should_stop():
             if not self._source.is_opened():
@@ -194,5 +202,6 @@ class VideoIngestWorker:
             target_fps=self.camera.target_fps,
             fps=self.camera.target_fps,
             encoding=self.camera.encoding,
+            ai_image_size=self.camera.ai_image_size,
         )
         return FrameJob(metadata=metadata, frame=processed, image_bytes=image_bytes, received_at=received_at)

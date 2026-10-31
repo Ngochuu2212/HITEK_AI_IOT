@@ -22,6 +22,8 @@ class FrameMetadata(BaseModel):
     fps: Optional[float] = Field(default=None, gt=0)
     encoding: str = Field(..., min_length=1)
     tenant_id: Optional[str] = None
+    # imgsz YOLO rieng cua camera; None thi AI Service dung mac dinh.
+    ai_image_size: Optional[int] = Field(default=None, ge=32)
 
     @validator("source_type", "encoding")
     def normalize_uppercase(cls, value: str) -> str:

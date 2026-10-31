@@ -23,4 +23,6 @@ cameras:
     name: "Camera 02 - Main Gate"
     source_type: "RTSP"
     source_url: "rtsp://mediamtx:8554/camera2"
+    # Dam dong nhin tu cao, nguoi rat nho: YOLO can anh 1280 (database co the ghi de).
+    ai_image_size: 1280
     enabled: true

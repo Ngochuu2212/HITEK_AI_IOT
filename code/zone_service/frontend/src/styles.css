@@ -250,6 +250,9 @@ input:disabled, select:disabled { opacity: 0.55; }
 .login { max-width: 380px; margin: 12vh auto 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-m); padding: 28px; display: grid; gap: 14px; }
 .login h1 { font-size: 22px; }
 .divider-text { text-align: center; color: var(--muted); font-size: 12px; }
+.demo-accounts { display: grid; gap: 4px; justify-items: start; padding-top: 12px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.demo-accounts .link { background: none; border: 0; padding: 0; color: var(--cyan); cursor: pointer; text-align: left; }
+.demo-accounts .link:hover { text-decoration: underline; }
 .form-error { color: var(--red); font-size: 13px; }
 
 .toasts { position: fixed; right: 20px; bottom: 20px; display: grid; gap: 8px; z-index: 40; max-width: min(420px, calc(100vw - 40px)); }

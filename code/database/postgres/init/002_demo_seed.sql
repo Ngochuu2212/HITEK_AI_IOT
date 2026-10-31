@@ -93,14 +93,16 @@ camera_warehouse AS (
         'rtsp://mediamtx:8554/camera1',
         'active'
     FROM warehouse
+    -- Khong ghi de status: camera bi ngung tren Web Dashboard phai giu nguyen sau khi khoi dong lai.
     ON CONFLICT (tenant_id, source_url) DO UPDATE
     SET location_id = excluded.location_id,
         name = excluded.name,
-        source_type = excluded.source_type,
-        status = excluded.status
+        source_type = excluded.source_type
     RETURNING id
 )
-INSERT INTO camera (id, tenant_id, location_id, name, source_type, source_url, status)
+-- Video camera 2 quay dam dong tu tren cao, nguoi chi cao vai chuc pixel: YOLO can anh 1280
+-- moi nhan ra (640 gan nhu khong thay ai). Chi dat luc tao camera, sau do sua tren dashboard.
+INSERT INTO camera (id, tenant_id, location_id, name, source_type, source_url, status, ai_image_size)
 SELECT
     '550e8400-e29b-41d4-a716-446655440002',
     main_gate.tenant_id,
@@ -108,10 +110,10 @@ SELECT
     'Camera 02 - Main Gate',
     'RTSP',
     'rtsp://mediamtx:8554/camera2',
-    'active'
+    'active',
+    1280
 FROM main_gate
 ON CONFLICT (tenant_id, source_url) DO UPDATE
 SET location_id = excluded.location_id,
     name = excluded.name,
-    source_type = excluded.source_type,
-    status = excluded.status;
+    source_type = excluded.source_type;

@@ -73,11 +73,11 @@ File `code/database/postgres/init/006_demo_location_access.sql`:
 
 Demo cho mentor:
 1. Trong `.env` đặt `AUTH_MODE=jwt` và `AUTH_DEV_LOGIN=true`, rồi chạy `docker compose up -d --build`.
-2. Mở http://localhost:8010, chọn user trong ô **Đăng nhập demo**.
+2. Mở http://localhost:8010, đăng nhập bằng email và mật khẩu `Demo@123` (bấm tên tài khoản demo dưới form để điền sẵn).
 3. `kho.operator` chỉ thấy Camera 01; vào Zone Editor sửa zone sẽ bị báo 403. `cong.viewer` chỉ thấy Camera 02. `owner` thấy cả hai.
 4. Thử gọi trực tiếp: `GET /api/cameras/<id camera của location khác>` thì nhận 404.
 
-Khi Backend đã có màn hình đăng nhập: đặt `AUTH_DEV_LOGIN=false`, dùng token Backend cấp (frontend có ô dán token, hoặc frontend của Backend gửi kèm).
+Dashboard Zone Service đăng nhập bằng tài khoản Backend: form gửi email và mật khẩu tới `POST /api/auth/login` của Zone Service, Zone Service chuyển sang `POST /api/v1/auth/login` của Backend và trả lại token Backend ký. Khi trình diễn thật đặt `AUTH_DEV_LOGIN=false` để ẩn danh sách tài khoản demo. API `POST /api/auth/dev-login` (cấp token không cần mật khẩu) vẫn còn cho kiểm thử, chỉ chạy khi `AUTH_DEV_LOGIN=true`.
 
 ## 5. Giới hạn hiện tại
 

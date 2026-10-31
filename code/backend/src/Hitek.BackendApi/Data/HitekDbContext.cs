@@ -1,5 +1,6 @@
 using Hitek.BackendApi.Domain;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace Hitek.BackendApi.Data;
 
@@ -62,6 +63,11 @@ public class HitekDbContext(DbContextOptions<HitekDbContext> options, ITenantPro
         {
             e.ToTable("camera", t => t.ExcludeFromMigrations());
             e.HasQueryFilter(x => x.TenantId == TenantId);
+            // Cột status là kiểu enum riêng của PostgreSQL (camera_status). EF gửi chuỗi dưới
+            // dạng text nên PostgreSQL từ chối; vì vậy EF không bao giờ ghi cột này: thêm mới
+            // thì database tự đặt 'active', đổi trạng thái đi qua CameraStatusWriter.
+            e.Property(x => x.Status).Metadata.SetBeforeSaveBehavior(PropertySaveBehavior.Ignore);
+            e.Property(x => x.Status).Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
         });
 
         // Khoá ngoại event.ai_event_id → ai_event đã gắn bằng SQL thuần trong migration đầu

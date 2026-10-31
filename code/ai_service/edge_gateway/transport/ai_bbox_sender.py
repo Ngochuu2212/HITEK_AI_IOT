@@ -182,7 +182,7 @@ class HttpAiBboxSender:
     def _build_payload(self, job: FrameJob) -> dict:
         metadata = job.metadata
         tenant_id = self.tenant_id or getattr(metadata, "tenant_id", None)
-        return {
+        payload = {
             "tenant_id": tenant_id,
             "camera_id": metadata.camera_id,
             "location_id": metadata.location_id,
@@ -201,6 +201,9 @@ class HttpAiBboxSender:
             "confidence": self.confidence_threshold,
             "image_b64": base64.b64encode(job.image_bytes).decode("ascii"),
         }
+        if metadata.ai_image_size:
+            payload["imgsz"] = metadata.ai_image_size
+        return payload
 
     def _mark_accepted(self, job: FrameJob) -> None:
         with self._lock:

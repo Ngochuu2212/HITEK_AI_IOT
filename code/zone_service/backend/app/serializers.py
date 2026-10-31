@@ -14,12 +14,21 @@ def camera_out(row, edge_gateway_base_url: str) -> CameraOut:
         source_type=row["source_type"],
         source_url=row["source_url"],
         status=row["status"],
+        ai_image_size=_ai_image_size(row),
         live_stream_url="/api/cameras/{}/mjpeg".format(camera_id),
         latest_frame_url="/api/cameras/{}/latest.jpg".format(camera_id),
         detection_stream_url="/api/cameras/{}/detections/stream".format(camera_id),
         created_at=_stringify(row["created_at"]),
         updated_at=_stringify(row["updated_at"]),
     )
+
+
+def _ai_image_size(row) -> int:
+    # Cot ai_image_size chi co tren PostgreSQL; database SQLite (dev, kiem thu) dung mac dinh.
+    try:
+        return int(row["ai_image_size"] or 640)
+    except (KeyError, IndexError):
+        return 640
 
 
 def reference_frame_out(row, public_image_url: str) -> ReferenceFrameOut:

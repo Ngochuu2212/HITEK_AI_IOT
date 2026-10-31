@@ -40,9 +40,10 @@ git checkout main          # hoặc branch nhóm đang tích hợp, ví dụ fea
 
 **Video camera giả lập.** Hệ thống giả lập 2 camera IP bằng cách phát lặp file video trong `code/data/videos/`.
 
-- Repo có sẵn hai video nên clone về là chạy được: `vtest.avi` (người đi bộ, dữ liệu mẫu của OpenCV, YOLO nhận diện tốt) mặc định cho camera 1, và `dummy_video_2.mp4` cho camera 2 (người rất nhỏ quay từ trên cao, YOLO hầu như không nhận ra ai). Lưu ý luật `person_intrusion` mặc định chỉ bật 23:00–06:00; demo ban ngày thì bỏ chọn khung giờ của luật trong Zone Editor.
+- Repo có sẵn hai video nên clone về là chạy được: `vtest.avi` (người đi bộ, dữ liệu mẫu của OpenCV, YOLO nhận diện tốt) mặc định cho camera 1, và `dummy_video_2.mp4` cho camera 2 (đám đông quay từ trên cao, mỗi người chỉ cao vài chục pixel: camera 2 đặt độ chi tiết AI 1280 thì YOLO mới nhận ra, ở 640 gần như không thấy ai). Lưu ý luật `person_intrusion` mặc định chỉ bật 23:00–06:00; demo ban ngày thì bỏ chọn khung giờ của luật trong Zone Editor.
 - Video demo đầy đủ (`neighbors_yard.ts`, `video_4_police.mp4`, `stole.mp4`, `camera_test.mp4`...) không commit vì quá nặng. Lấy từ thư mục chung của nhóm, chép vào `code/data/videos/`, rồi khai báo tên file trong `.env` (`CAMERA1_VIDEO`, `CAMERA2_VIDEO`).
 - Thêm video mới: nên dùng `.mp4` (H.264) hoặc `.ts`, độ phân giải ≤ 1280×720.
+- Muốn có thêm camera: tải video lên và thêm camera ngay trên Web Dashboard (mục 7b), không phải sửa compose hay file cấu hình.
 - Nguồn dữ liệu test công khai (CAVIAR, Mall, MOT17, ABODA...), kịch bản tự quay và cách ghi nhãn: xem [docs/DU_LIEU_TEST.md](DU_LIEU_TEST.md).
 
 **Model YOLO.** Không cần chuẩn bị. Lần đầu AI Service nhận frame sẽ tự tải `yolo11n.pt` (khoảng 5 MB, cần Internet) vào `code/ai_service/models/`. Muốn dùng model khác: chép file `.pt` vào thư mục đó và sửa `YOLO_MODEL` trong `.env`.
@@ -68,7 +69,7 @@ Copy-Item .env.example .env      # PowerShell
 | `BACKEND_BASE_URL` | `http://backend:5250` | Địa chỉ Backend nhìn từ zone-service. Đổi thành `http://host.docker.internal:5250` khi Backend chạy ngoài Docker |
 | `BACKEND_PROJECT`, `BACKEND_DLL` | đường dẫn `.csproj`, tên `.dll` | Project .NET cần build (xem `code/backend/README.md`) |
 | `AUTH_MODE` | `jwt` / `off` | `jwt` = phải đăng nhập, mỗi user chỉ thấy location được giao. `off` = không đăng nhập (dev) |
-| `AUTH_DEV_LOGIN` | `true` / `false` | Hiện nút **Đăng nhập demo** chọn user mẫu (khi Backend chưa có đăng nhập) |
+| `AUTH_DEV_LOGIN` | `true` / `false` | Hiện danh sách tài khoản demo dưới form đăng nhập của dashboard Zone Service (bấm để điền email và mật khẩu). Đặt `false` khi trình diễn thật |
 | `JWT_SECRET`, `SERVICE_API_KEY` | chuỗi bí mật | Khóa ký JWT (phải trùng với Backend), khóa cho service nội bộ. Đổi khi triển khai thật |
 | `*_PORT` | | Đổi nếu bị trùng cổng trên máy |
 
@@ -170,7 +171,8 @@ Cảm biến giả lập ─MQTT─► mosquitto:1883 ─► iot-service ─► 
 
 Khi `AUTH_MODE=jwt`, dashboard yêu cầu đăng nhập. Mỗi user chỉ thấy camera, zone, sự kiện, bằng chứng của location được giao (bảng `user_location_access`). Chi tiết mô hình và cách thống nhất với Backend: [docs/PHAN_QUYEN.md](PHAN_QUYEN.md).
 
-- User demo: `owner@demo.local` (thấy hết), `kho.operator@demo.local` (chỉ Warehouse), `cong.viewer@demo.local` (chỉ Main Gate). Chọn ở ô **Đăng nhập demo** góc trên dashboard.
+- Đăng nhập bằng email và mật khẩu, dùng chung tài khoản với Web Dashboard: Zone Service chuyển sang Backend kiểm tra (`POST /api/auth/login` → `POST /api/v1/auth/login`), nên Backend phải đang chạy.
+- User demo (mật khẩu `Demo@123`): `owner@demo.local` (thấy hết), `kho.operator@demo.local` (chỉ Warehouse), `cong.viewer@demo.local` (chỉ Main Gate).
 - AI Service và Edge Gateway gọi Zone Service bằng header `X-Service-Key`, nên ba service phải cùng `SERVICE_API_KEY` (compose đã truyền sẵn). Nếu chạy AI trên máy host (chế độ C), đặt `$env:SERVICE_API_KEY` giống giá trị trong `.env` trước khi chạy `uvicorn`.
 - Muốn tắt đăng nhập khi dev: `AUTH_MODE=off`, rồi `docker compose up -d zone-service`.
 
@@ -236,7 +238,8 @@ Các service phải ở trạng thái `running`; những service có healthcheck
 
 | Địa chỉ | Dùng để |
 | --- | --- |
-| http://localhost:8010 | **Dashboard**: Live Cameras, YOLO Detection, Zone Editor, Evidence |
+| http://localhost:3000 | **Web Dashboard**: tổng quan, giám sát camera, cảnh báo realtime, thiết bị, tra cứu và xử lý cảnh báo |
+| http://localhost:8010 | Dashboard của Zone Service: Live Cameras, YOLO Detection, **Zone Editor** (vẽ vùng cấm), Evidence |
 | http://localhost:8010/docs | Swagger API của Zone Service |
 | http://localhost:8010/api/integration/backend | Tình trạng gửi sự kiện sang Backend API |
 | http://localhost:5250/swagger | Swagger của Backend API (.NET): cảnh báo, thiết bị, luật, người dùng |
@@ -270,6 +273,19 @@ Invoke-RestMethod http://localhost:8003/health | ConvertTo-Json -Depth 6
 6. Khi có vi phạm: banner đỏ hiện trên dashboard, tab **Evidence** có ảnh và clip ±5 giây.
 
 Cảnh báo vẫn được tạo khi không ai mở dashboard, vì Rule Engine chạy trong AI Service.
+
+### 7b. Thêm camera trên Web Dashboard
+
+1. Đăng nhập http://localhost:3000 bằng `admin@demo.local` hoặc `owner@demo.local` (chỉ quản trị viên được thêm camera).
+2. Trang **Thiết bị** → **+ Thêm camera**: đặt tên, chọn khu vực, chọn nguồn:
+   - **Video mô phỏng**: chọn một file trong `code/data/videos/` (mỗi video gắn với một camera), hoặc bấm **Tải video lên…** để đưa video từ máy vào thư mục đó (.mp4 H.264 tốt nhất, tối đa 300 MB; tên file được bỏ dấu, không ghi đè file đã có).
+   - **Camera IP (RTSP)**: nhập địa chỉ dạng `rtsp://tài-khoản:mật-khẩu@192.168.1.64:554/...`; máy chạy Edge Gateway phải truy cập được địa chỉ này.
+   - **Độ chi tiết khi AI phân tích**: 640 cho người ở gần camera; 1280 cho đám đông hoặc camera quay từ xa (người nhỏ). 1280 chậm hơn khoảng 3–4 lần trên CPU (camera 2 khoảng 100 ms/khung so với 30 ms), nên chỉ bật cho camera cần.
+3. Backend ghi camera vào database. Trong khoảng 5 giây Edge Gateway thấy camera mới và mở luồng video, AI bắt đầu phân tích, camera hiện ở trang **Giám sát camera** và trong Zone Editor.
+4. Vẽ vùng cấm cho camera mới ở Zone Editor (mục 7) thì AI mới sinh cảnh báo.
+5. **Sửa** đổi tên, khu vực, độ chi tiết AI (áp dụng ngay) hoặc nguồn (Edge Gateway tự mở lại luồng). **Ngưng** dừng đọc video và phân tích AI nhưng giữ nguyên sự kiện, bằng chứng, cảnh báo cũ; **Bật lại** chạy tiếp. Không có nút xoá vì xoá camera sẽ xoá lan truyền cả lịch sử của nó.
+
+Camera 1, 2 khai báo trong `code/ai_service/config.docker.yaml` vẫn được nạp vào database mỗi lần Zone Service khởi động, nhưng trạng thái Ngưng/Bật đặt trên dashboard được giữ nguyên.
 
 ## 8. Lệnh dùng hằng ngày
 
@@ -336,6 +352,18 @@ uvicorn backend.app.main:app --app-dir code\zone_service --host 0.0.0.0 --port 8
 ### IoT: Mosquitto, IoT Service, bộ giả lập cảm biến
 
 Ba service `mosquitto`, `iot-service`, `sensor-simulator` đã có trong compose (profile `backend`). Bộ giả lập phát dữ liệu PIR, Door, Beam lên `mosquitto:1883`; IoT Service chuẩn hoá rồi chuyển sang Backend. Thiết bị không dùng được MQTT gửi qua HTTP dự phòng `POST http://localhost:5260/api/v1/readings/{sensorId}` (cần token service).
+
+### Nhóm Frontend (Web Dashboard React)
+
+```powershell
+docker compose stop web-dashboard     # nhường cổng 3000 cho Vite
+cd code\web_dashboard
+npm install
+npm run dev                          # http://localhost:3000, tự tải lại khi sửa code
+```
+
+- Vite chuyển tiếp `/api/v1`, `/hubs` sang Backend, `/zone` sang Zone Service, `/ai` sang AI Service, giống Nginx trong Docker. Chi tiết: [code/web_dashboard/README.md](../code/web_dashboard/README.md).
+- Sửa xong chạy `npm run build` để kiểm tra kiểu TypeScript, rồi `docker compose up -d --build web-dashboard`.
 
 ### Nhóm Kiểm thử
 

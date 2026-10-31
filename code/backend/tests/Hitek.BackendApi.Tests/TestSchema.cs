@@ -54,7 +54,9 @@ public static class TestSchema
                 role TEXT, status TEXT);
             CREATE TABLE camera (
                 id TEXT NOT NULL PRIMARY KEY, tenant_id TEXT NOT NULL, location_id TEXT NOT NULL,
-                name TEXT, source_type TEXT, status TEXT, last_seen_at TEXT);
+                name TEXT, source_type TEXT, source_url TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', ai_image_size INTEGER NOT NULL DEFAULT 640,
+                last_seen_at TEXT, created_at TEXT, updated_at TEXT,
+                UNIQUE (location_id, name), UNIQUE (tenant_id, source_url));
             CREATE TABLE ai_event (
                 id TEXT NOT NULL PRIMARY KEY, tenant_id TEXT NOT NULL, camera_id TEXT NOT NULL, event_type TEXT NOT NULL);
             CREATE TABLE evidence (
@@ -74,8 +76,10 @@ public static class TestSchema
             new Location { Id = AreaWarehouse, TenantId = TenantA, Code = "warehouse", Name = "Warehouse" },
             new Location { Id = AreaOtherTenant, TenantId = TenantB, Code = "warehouse", Name = "Warehouse" });
         db.Cameras.AddRange(
-            new Camera { Id = CameraWarehouse, TenantId = TenantA, LocationId = AreaWarehouse, Name = "Cam-Kho", SourceType = "rtsp", Status = "active" },
-            new Camera { Id = CameraOtherTenant, TenantId = TenantB, LocationId = AreaOtherTenant, Name = "Cam-B", SourceType = "rtsp", Status = "offline" });
+            new Camera { Id = CameraWarehouse, TenantId = TenantA, LocationId = AreaWarehouse, Name = "Cam-Kho", SourceType = "RTSP", SourceUrl = "rtsp://mediamtx:8554/camera1" },
+            new Camera { Id = CameraOtherTenant, TenantId = TenantB, LocationId = AreaOtherTenant, Name = "Cam-B", SourceType = "RTSP", SourceUrl = "rtsp://mediamtx:8554/camera-b" });
         db.SaveChanges();
+        // EF không ghi cột status (xem HitekDbContext), giống trên PostgreSQL.
+        db.Database.ExecuteSqlRaw("UPDATE camera SET status = 'offline' WHERE name = 'Cam-B'");
     }
 }

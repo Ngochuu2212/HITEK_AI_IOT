@@ -41,54 +41,64 @@ export function renderUserChip(container, me, config) {
 }
 
 export async function renderLoginScreen(container, config) {
+  // Tai khoan va mat khau la cua Backend; Zone Service chuyen tiep sang Backend kiem tra.
   const users = config.dev_login ? await api("/api/auth/dev-users").catch(() => []) : [];
   container.innerHTML = `
-    <section class="login">
+    <form class="login" id="loginForm">
       <h1>Đăng nhập</h1>
-      <p class="muted">Mỗi tài khoản chỉ thấy camera của khu vực được giao.</p>
+      <p class="muted">Dùng chung tài khoản với Web Dashboard. Mỗi tài khoản chỉ thấy camera của khu vực được giao.</p>
+      <label class="field">
+        <span>Email</span>
+        <input id="loginEmail" type="email" autocomplete="username" required autofocus>
+      </label>
+      <label class="field">
+        <span>Mật khẩu</span>
+        <input id="loginPassword" type="password" autocomplete="current-password" required>
+      </label>
+      <button type="submit" class="primary" id="loginSubmit">Đăng nhập</button>
+      <p class="form-error" id="loginError" hidden></p>
       ${
         users.length
-          ? `<label class="field">
-               <span>Tài khoản demo</span>
-               <select id="loginUser">
-                 ${users
-                   .map((u) => `<option value="${escapeHtml(u.email)}">${escapeHtml(u.email)} (${escapeHtml(ROLE_LABELS[u.role] || u.role)})</option>`)
-                   .join("")}
-               </select>
-             </label>
-             <button type="button" class="primary" id="loginDemo">Đăng nhập</button>
-             <p class="divider-text">hoặc</p>`
+          ? `<div class="demo-accounts">
+               <span>Tài khoản demo (mật khẩu <code>Demo@123</code>), bấm để điền:</span>
+               ${users
+                 .map((u) => `<button type="button" class="link" data-email="${escapeHtml(u.email)}">${escapeHtml(u.email)} · ${escapeHtml(ROLE_LABELS[u.role] || u.role)}</button>`)
+                 .join("")}
+             </div>`
           : ""
       }
-      <label class="field">
-        <span>Token do Backend cấp</span>
-        <input id="loginToken" type="password" autocomplete="off" placeholder="Dán JWT vào đây">
-      </label>
-      <button type="button" class="${users.length ? "" : "primary"}" id="loginWithToken">Dùng token này</button>
-      <p class="form-error" id="loginError" hidden></p>
-    </section>`;
+    </form>`;
+  const form = container.querySelector("#loginForm");
+  const email = container.querySelector("#loginEmail");
+  const password = container.querySelector("#loginPassword");
+  const submit = container.querySelector("#loginSubmit");
   const error = container.querySelector("#loginError");
-  const fail = (message) => {
-    error.hidden = false;
-    error.textContent = message;
-  };
-  container.querySelector("#loginDemo")?.addEventListener("click", async () => {
+
+  container.querySelectorAll("[data-email]").forEach((button) =>
+    button.addEventListener("click", () => {
+      email.value = button.dataset.email;
+      password.value = "Demo@123";
+      password.focus();
+    }),
+  );
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    error.hidden = true;
+    submit.disabled = true;
+    submit.textContent = "Đang đăng nhập…";
     try {
-      const email = container.querySelector("#loginUser").value;
-      const result = await api("/api/auth/dev-login", { method: "POST", body: JSON.stringify({ email }) });
+      const result = await api("/api/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ email: email.value.trim(), password: password.value }),
+      });
       setToken(result.access_token);
       window.location.reload();
     } catch (err) {
-      fail(`Không đăng nhập được: ${err.message}`);
+      error.hidden = false;
+      error.textContent = err.message || "Không đăng nhập được.";
+      submit.disabled = false;
+      submit.textContent = "Đăng nhập";
     }
-  });
-  container.querySelector("#loginWithToken").addEventListener("click", () => {
-    const token = container.querySelector("#loginToken").value.trim();
-    if (!token) {
-      fail("Chưa có token. Dán token do Backend cấp vào ô trên.");
-      return;
-    }
-    setToken(token);
-    window.location.reload();
   });
 }

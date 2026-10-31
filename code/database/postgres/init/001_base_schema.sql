@@ -104,6 +104,11 @@ CREATE TABLE IF NOT EXISTS camera (
     FOREIGN KEY (location_id, tenant_id) REFERENCES location(id, tenant_id) ON DELETE CASCADE
 );
 
+-- Kich thuoc anh YOLO dung cho camera nay (imgsz). 640 nhanh, du cho nguoi o gan; 1280 cho
+-- canh dong nguoi quay tu xa (nguoi chi vai chuc pixel), ton CPU gap khoang 4 lan.
+-- Viet bang ALTER de database cu cung co cot khi Zone Service chay lai file nay.
+ALTER TABLE camera ADD COLUMN IF NOT EXISTS ai_image_size integer NOT NULL DEFAULT 640;
+
 CREATE TABLE IF NOT EXISTS camera_reference_frame (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     camera_id uuid NOT NULL REFERENCES camera(id) ON DELETE CASCADE,

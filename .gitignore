@@ -66,3 +66,7 @@ code/data/videos/*
 **/bin/
 **/obj/
 .vs/
+
+# Web Dashboard (Node)
+node_modules/
+code/web_dashboard/dist/

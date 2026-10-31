@@ -3,10 +3,9 @@ import logging
 import os
 import signal
 import threading
-from dataclasses import replace
-from typing import List
 
-from .config import load_video_ingest_config
+from .camera_sync import CameraManager, start_camera_sync
+from .config import CameraCatalog, load_video_ingest_config
 from .evidence_recorder import VideoEvidenceRecorder
 from .live_viewer import DetectionHub, LiveFrameHub, start_live_viewer_server
 from .transport.ai_bbox_sender import FanOutFrameSink, HttpAiBboxSender, WebSocketAiBboxSender
@@ -46,7 +45,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--viewer-port", type=int, default=int(os.getenv("EDGE_VIEWER_PORT", "8002")))
     parser.add_argument("--ai-queue-size", type=int, default=int(os.getenv("EDGE_AI_QUEUE_SIZE", "4")))
     parser.add_argument("--ai-fps", type=float, default=float(os.getenv("EDGE_AI_FPS", os.getenv("AI_FPS", "5"))))
-    parser.add_argument("--max-frames-per-camera", type=int, default=None, help="Optional test limit.")
+    parser.add_argument(
+        "--camera-sync-url",
+        default=os.getenv("EDGE_CAMERA_SYNC_URL", ""),
+        help="Danh sach camera cua Zone Service (vd. http://zone-service:8010/api/cameras). Rong: chi dung file cau hinh.",
+    )
+    parser.add_argument("--camera-sync-seconds", type=float, default=float(os.getenv("EDGE_CAMERA_SYNC_SECONDS", "5")))
     return parser.parse_args()
 
 
@@ -54,17 +58,13 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s")
     args = parse_args()
     ingest_config = load_video_ingest_config(args.config)
-    if args.viewer_fps > 0:
-        ingest_config = replace(
-            ingest_config,
-            cameras=[replace(camera, target_fps=args.viewer_fps) for camera in ingest_config.cameras],
-        )
-    live_hub = LiveFrameHub(ingest_config.cameras)
+    catalog = CameraCatalog()
+    live_hub = LiveFrameHub([])
     detection_hub = DetectionHub()
     evidence_recorder = VideoEvidenceRecorder(live_hub.frames_between)
     viewer_thread = start_live_viewer_server(
         live_hub,
-        ingest_config.cameras,
+        catalog,
         host=args.viewer_host,
         port=args.viewer_port,
         detection_hub=detection_hub,
@@ -97,32 +97,28 @@ def main() -> None:
     signal.signal(signal.SIGINT, stop_handler)
     signal.signal(signal.SIGTERM, stop_handler)
 
-    threads: List[threading.Thread] = []
-    workers: List[VideoIngestWorker] = []
-    for camera in ingest_config.cameras:
-        worker = VideoIngestWorker(camera, ingest_config, sender, stop_event)
-        workers.append(worker)
-        thread = threading.Thread(
-            target=worker.run,
-            kwargs={"max_frames": args.max_frames_per_camera},
-            name="edge-camera-{}".format(camera.camera_id),
-            daemon=True,
-        )
-        thread.start()
-        threads.append(thread)
+    manager = CameraManager(
+        ingest_config,
+        sender,
+        catalog,
+        on_camera_started=lambda camera: live_hub.set_camera_name(camera.camera_id, camera.name),
+        fps_override=args.viewer_fps,
+    )
+    # Chay ngay cac camera trong file cau hinh; neu bat dong bo thi danh sach trong database
+    # (Zone Service) thay the khi lay duoc, gom ca camera them tu Web Dashboard.
+    manager.apply(ingest_config.cameras)
+    if args.camera_sync_url:
+        start_camera_sync(manager, args.camera_sync_url, os.getenv("SERVICE_API_KEY"), args.camera_sync_seconds, stop_event)
 
     try:
-        while any(thread.is_alive() for thread in threads):
-            for thread in threads:
-                thread.join(timeout=0.5)
+        while not stop_event.is_set():
+            stop_event.wait(0.5)
     except KeyboardInterrupt:
         logging.info("Keyboard interrupt received")
     finally:
         stop_event.set()
-        for worker in workers:
-            worker.stop()
-        for thread in threads:
-            thread.join(timeout=2.0)
+        workers = manager.workers()
+        manager.stop_all()
         sender.close()
         evidence_recorder.close()
         viewer_thread.join(timeout=1.0)

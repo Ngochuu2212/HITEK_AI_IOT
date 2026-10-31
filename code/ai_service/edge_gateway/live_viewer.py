@@ -3,7 +3,7 @@ import threading
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Deque, Dict, Iterable, List, Optional
+from typing import Deque, Dict, Iterable, List, Optional, Union
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -12,7 +12,7 @@ from common.frame_job import FrameJob
 from common.models import CameraQueueSummary
 from common.time_utils import to_iso_utc
 
-from .config import CameraIngestConfig
+from .config import CameraCatalog, CameraIngestConfig
 from .evidence_recorder import EvidenceFrame, EvidenceRecordingRequest, VideoEvidenceRecorder
 
 
@@ -49,6 +49,10 @@ class LiveFrameHub:
         self._received_counts: Dict[str, int] = {}
         self._history_size_per_camera = max(1, history_size_per_camera)
         self._condition = threading.Condition()
+
+    def set_camera_name(self, camera_id: str, name: str) -> None:
+        with self._condition:
+            self._camera_names[camera_id] = name
 
     def enqueue(self, job: FrameJob) -> CameraQueueSummary:
         metadata = job.metadata
@@ -201,13 +205,14 @@ class DetectionHub:
 
 def create_live_viewer_app(
     hub: LiveFrameHub,
-    cameras: List[CameraIngestConfig],
+    cameras: Union[List[CameraIngestConfig], CameraCatalog],
     detection_hub: Optional[DetectionHub] = None,
     viewer_mode: str = "live",
     evidence_recorder: Optional[VideoEvidenceRecorder] = None,
 ) -> FastAPI:
     app = FastAPI(title="Hitek Edge Gateway Live Viewer")
-    camera_map = {camera.camera_id: camera for camera in cameras}
+    # Danh sach camera co the doi khi dang chay (camera them/ngung tren Web Dashboard).
+    camera_map = cameras if isinstance(cameras, CameraCatalog) else CameraCatalog(cameras)
     detection_hub = detection_hub or DetectionHub()
 
     @app.get("/health")
@@ -234,9 +239,9 @@ def create_live_viewer_app(
                     "frame_height": camera.frame_height,
                     "latest": latest_by_id.get(camera.camera_id),
                 }
-                for camera in cameras
+                for camera in camera_map.list()
             ],
-            "count": len(cameras),
+            "count": len(camera_map),
         }
 
     @app.get("/api/cameras/{camera_id}/latest.jpg")
@@ -331,22 +336,22 @@ def create_live_viewer_app(
 
     @app.get("/viewer")
     def viewer():
-        return HTMLResponse(_viewer_html(cameras, mode=viewer_mode))
+        return HTMLResponse(_viewer_html(camera_map.list(), mode=viewer_mode))
 
     @app.get("/viewer/live")
     def viewer_live():
-        return HTMLResponse(_viewer_html(cameras, mode="live"))
+        return HTMLResponse(_viewer_html(camera_map.list(), mode="live"))
 
     @app.get("/viewer/sync")
     def viewer_sync():
-        return HTMLResponse(_viewer_html(cameras, mode="sync"))
+        return HTMLResponse(_viewer_html(camera_map.list(), mode="sync"))
 
     return app
 
 
 def start_live_viewer_server(
     hub: LiveFrameHub,
-    cameras: List[CameraIngestConfig],
+    cameras: Union[List[CameraIngestConfig], CameraCatalog],
     host: str,
     port: int,
     detection_hub: Optional[DetectionHub] = None,

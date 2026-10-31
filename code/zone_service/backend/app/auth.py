@@ -1,5 +1,8 @@
-"""FastAPI glue cho phan quyen: dependency lay Principal va router /api/me, dev login."""
+"""FastAPI glue cho phan quyen: dependency lay Principal va router /api/me, dang nhap."""
 
+import json
+import urllib.error
+import urllib.request
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -29,6 +32,34 @@ def access_denied_handler(request: Request, exc: AccessDenied) -> JSONResponse:
 
 class DevLoginIn(BaseModel):
     email: str
+
+
+class LoginIn(BaseModel):
+    email: str
+    password: str
+
+
+def _backend_login(backend_base_url: str, email: str, password: str) -> dict:
+    """Dang nhap bang tai khoan cua Backend: Backend kiem tra mat khau va ky token, Zone Service
+    chi chuyen tiep. Nho vay mot tai khoan dung chung cho Web Dashboard va dashboard nay."""
+    request = urllib.request.Request(
+        "{}/api/v1/auth/login".format(backend_base_url),
+        data=json.dumps({"email": email, "password": password}).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        try:
+            message = json.loads(exc.read().decode("utf-8"))["error"]["message"]
+        except Exception:
+            message = "Đăng nhập thất bại ({}).".format(exc.code)
+        # 400 chu khong 401: sai mat khau khong phai "phien het han".
+        raise HTTPException(status_code=400 if exc.code in (400, 401, 403) else 502, detail=message)
+    except Exception:
+        raise HTTPException(status_code=502, detail="Không kết nối được Backend để kiểm tra tài khoản.")
 
 
 def create_auth_router(access: AccessControl) -> APIRouter:
@@ -65,6 +96,11 @@ def create_auth_router(access: AccessControl) -> APIRouter:
     @router.get("/api/auth/dev-users")
     def dev_users():
         return access.dev_users()
+
+    @router.post("/api/auth/login")
+    def login(payload: LoginIn):
+        result = _backend_login(access.settings.backend_base_url, payload.email.strip(), payload.password)
+        return {"access_token": result["accessToken"], "token_type": "Bearer"}
 
     @router.post("/api/auth/dev-login")
     def dev_login(payload: DevLoginIn):

@@ -41,7 +41,15 @@ public sealed class BackendApiFactory : WebApplicationFactory<Program>
 
     private readonly SqliteConnection _connection = new("DataSource=:memory:");
 
-    public BackendApiFactory() => _connection.Open();
+    // Thư mục video mô phỏng giả cho API camera: hai video và một file không phải video.
+    public string VideoDirectory { get; } = Directory.CreateTempSubdirectory("hitek-videos-").FullName;
+
+    public BackendApiFactory()
+    {
+        _connection.Open();
+        foreach (var name in new[] { "kho.mp4", "cong.avi", "ghi-chu.txt" })
+            File.WriteAllBytes(Path.Combine(VideoDirectory, name), [0]);
+    }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -50,6 +58,7 @@ public sealed class BackendApiFactory : WebApplicationFactory<Program>
         // Kiểm thử chạy SQLite và tự dựng schema: tắt bước migrate và đặt mật khẩu demo của môi trường dev.
         builder.UseSetting("Database:MigrateOnStartup", "false");
         builder.UseSetting("DevSeed:DefaultPassword", "");
+        builder.UseSetting("Cameras:VideoDirectory", VideoDirectory);
 
         // Khung giờ cho phép phủ cả ngày, để luật "ngoài giờ" (R2) không phụ thuộc vào giờ
         // của máy đang chạy kiểm thử. Cửa sổ AI nới rộng để máy chậm không làm phép thử chập chờn.
@@ -161,7 +170,11 @@ public sealed class BackendApiFactory : WebApplicationFactory<Program>
     protected override void Dispose(bool disposing)
     {
         base.Dispose(disposing);
-        if (disposing) _connection.Dispose();
+        if (disposing)
+        {
+            _connection.Dispose();
+            if (Directory.Exists(VideoDirectory)) Directory.Delete(VideoDirectory, recursive: true);
+        }
     }
 
     private static JsonSerializerOptions CreateJsonOptions()

@@ -30,7 +30,9 @@ public class TenantMember
     public string Status { get; set; } = string.Empty;
 }
 
-// camera — Backend đọc để gộp vào danh sách thiết bị cho Dashboard (đề án mục 4.4).
+// camera — Backend gộp vào danh sách thiết bị cho Dashboard (đề án mục 4.4), và quản trị
+// viên thêm, sửa, ngưng camera qua /api/v1/cameras. Bảng thuộc schema của AI Service; Edge
+// Gateway đọc lại danh sách này để tự mở hoặc đóng luồng video.
 public class Camera : ITenantScoped
 {
     public Guid Id { get; set; }
@@ -38,8 +40,13 @@ public class Camera : ITenantScoped
     public Guid LocationId { get; set; }
     public string Name { get; set; } = string.Empty;
     public string SourceType { get; set; } = string.Empty;
+    public string SourceUrl { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public DateTime? LastSeenAt { get; set; }
+    // Kích thước ảnh YOLO (imgsz) khi AI phân tích camera này; Edge Gateway gửi kèm từng khung hình.
+    public int AiImageSize { get; set; } = 640;
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
 }
 
 // ai_event — một vụ vi phạm AI phát hiện. Backend đọc lúc nhận POST /api/v1/events để kiểm

@@ -112,6 +112,14 @@ services:
       TENANT_ID: ${TENANT_ID:-demo-tenant}
       # Khoa service noi bo de upload clip bang chung khi Zone Service bat AUTH_MODE=jwt
       SERVICE_API_KEY: ${SERVICE_API_KEY:-hitek-dev-service-key}
+      # Camera them/sua/ngung tren Web Dashboard: Edge Gateway hoi danh sach camera cua Zone
+      # Service vai giay mot lan roi tu mo/dong luong video, khong can build lai.
+      EDGE_CAMERA_SYNC_URL: http://zone-service:8010/api/cameras
+      EDGE_CAMERA_SYNC_SECONDS: ${EDGE_CAMERA_SYNC_SECONDS:-5}
+      # Camera loai FILE (video mo phong) doc thang file trong thu muc nay.
+      EDGE_VIDEO_DIR: /videos
+    volumes:
+      - ./code/data/videos:/videos:ro
     ports:
       - "${EDGE_GATEWAY_PORT:-8002}:8002"
     healthcheck:
@@ -138,6 +146,10 @@ services:
       LOCAL_YOLO_CLASSES: ${YOLO_CLASSES:-person,car,motorcycle}
       LOCAL_YOLO_CONFIDENCE: ${YOLO_CONFIDENCE:-0.35}
       LOCAL_YOLO_DEVICE: ${YOLO_DEVICE:-cpu}
+      # ByteTrack chi mo track moi cho phat hien co do tin cay >= nguong nay. 0.5 bo sot nguoi nho
+      # (dam dong quay tu xa, YOLO chi tin 0.35-0.5); 0.4 giu duoc phan lon ma it bao nham.
+      LOCAL_TRACK_HIGH_THRESH: ${TRACK_HIGH_THRESH:-0.4}
+      LOCAL_NEW_TRACK_THRESH: ${NEW_TRACK_THRESH:-0.4}
       RULE_ENGINE_ENABLED: ${RULE_ENGINE_ENABLED:-true}
       AI_HOST_LABEL: ${AI_HOST_LABEL:-docker-may-nay}
       SERVICE_API_KEY: ${SERVICE_API_KEY:-hitek-dev-service-key}
@@ -182,6 +194,11 @@ services:
       # Mot khoa ky JWT cho ca he thong: Backend ky token, IoT Service va Zone Service kiem tra.
       Jwt__SigningKey: &jwt-key ${JWT_SECRET:-hitek-dev-jwt-secret-change-me-32chars}
       AiService__PublicBaseUrl: ${AI_PUBLIC_BASE_URL:-http://localhost:8010}
+      # Video mo phong de chon khi them camera loai FILE (cung thu muc Edge Gateway doc).
+      # Backend ghi duoc vao day de nhan video tai len tu Web Dashboard.
+      Cameras__VideoDirectory: /videos
+    volumes:
+      - ./code/data/videos:/videos
     ports:
       - "${BACKEND_PORT:-5250}:5250"
     restart: unless-stopped
@@ -297,6 +314,26 @@ services:
       timeout: 5s
       retries: 6
       start_period: 20s
+    restart: unless-stopped
+
+  # --------------------------------------------- Web Dashboard (React, Nginx)
+  web-dashboard:
+    # Giam sat camera, canh bao realtime, thiet bi, tra cuu va xu ly canh bao.
+    # Nginx phuc vu trang va proxy /api/v1, /hubs -> backend; /zone -> zone-service; /ai -> ai-service.
+    profiles: ["backend"]
+    build:
+      context: ./code/web_dashboard
+      args:
+        VITE_SHOW_DEMO_ACCOUNTS: ${DASHBOARD_SHOW_DEMO_ACCOUNTS:-true}
+    image: hitek-ai-iot/web-dashboard:local
+    container_name: hitek-web-dashboard
+    depends_on:
+      backend:
+        condition: service_started
+      zone-service:
+        condition: service_started
+    ports:
+      - "${DASHBOARD_PORT:-3000}:80"
     restart: unless-stopped
 
 volumes:
